@@ -1,0 +1,69 @@
+name: "FCD Annual Processing — Tamil Nadu"
+
+on:
+  schedule:
+    - cron: "0 1 1 3 *"   # 01:00 UTC on 1 March every year
+  workflow_dispatch:
+    inputs:
+      aoi_name:
+        description: "AOI name (e.g. TamilNadu, Chennai_District)"
+        required: true
+        default: "TamilNadu"
+      aoi_asset:
+        description: "GEE asset path"
+        required: true
+        default: "projects/ee-athithiyan/assets/tamilnadu_boundary"
+      years:
+        description: "Comma-separated years (e.g. 2020,2025)"
+        required: true
+        default: "2025"
+      cloud_pct:
+        description: "Max cloud percentage threshold"
+        required: false
+        default: "1"
+
+jobs:
+  run-fcd-pipeline:
+    name: "Run FCD Pipeline"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: gee/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r gee/requirements.txt
+
+      - name: Run FCD pipeline
+        working-directory: gee
+        env:
+          GEE_SERVICE_ACCOUNT_KEY:   ${{ secrets.GEE_SERVICE_ACCOUNT_KEY }}
+          GEE_PROJECT_ID:            ${{ secrets.GEE_PROJECT_ID }}
+          GEE_SERVICE_ACCOUNT_EMAIL: ${{ secrets.GEE_SERVICE_ACCOUNT_EMAIL }}
+          GCS_BUCKET:                ${{ secrets.GCS_BUCKET }}
+        run: |
+          python run_fcd_pipeline.py \
+            --aoi-name  "${{ github.event.inputs.aoi_name || 'TamilNadu' }}" \
+            --aoi-asset "${{ github.event.inputs.aoi_asset || 'projects/ee-athithiyan/assets/tamilnadu_boundary' }}" \
+            --years     "${{ github.event.inputs.years || '2025' }}" \
+            --cloud-pct "${{ github.event.inputs.cloud_pct || '1' }}" \
+            --bucket    "$GCS_BUCKET"
+
+      - name: Upload task manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: gee-task-manifest-${{ github.run_id }}
+          path: gee/gee_task_manifest.json
+          retention-days: 90
+
+      - name: Notify on failure
+        if: failure()
+        run: echo "::error::FCD pipeline failed — check GEE task logs."

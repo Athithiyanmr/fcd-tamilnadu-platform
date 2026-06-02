@@ -1,0 +1,44 @@
+name: "FCD Zonal Statistics — District / Block / Forest Division"
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "fcd_runs UUID to compute stats for"
+        required: true
+      admin_level:
+        description: "district | block | forest_division"
+        required: true
+        default: "district"
+
+jobs:
+  compute-zonal-stats:
+    name: "Compute Zonal Statistics"
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: gee/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r gee/requirements.txt
+
+      - name: Run zonal stats
+        working-directory: gee
+        env:
+          GEE_SERVICE_ACCOUNT_KEY:   ${{ secrets.GEE_SERVICE_ACCOUNT_KEY }}
+          GEE_PROJECT_ID:            ${{ secrets.GEE_PROJECT_ID }}
+          GEE_SERVICE_ACCOUNT_EMAIL: ${{ secrets.GEE_SERVICE_ACCOUNT_EMAIL }}
+          DATABASE_URL:              ${{ secrets.DATABASE_URL }}
+        run: |
+          echo "Run ID     : ${{ github.event.inputs.run_id }}"
+          echo "Admin level: ${{ github.event.inputs.admin_level }}"
+          python compute_zonal_stats.py \
+            --run-id      "${{ github.event.inputs.run_id }}" \
+            --admin-level "${{ github.event.inputs.admin_level }}"

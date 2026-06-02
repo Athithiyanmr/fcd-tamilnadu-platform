@@ -1,14 +1,12 @@
+import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from app.core.config import settings
 
-engine = create_engine(
-    settings.DATABASE_URL,
-    pool_size=10,
-    max_overflow=20,
-    pool_pre_ping=True
-)
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://fcd_admin:fcd_password@localhost:5432/fcd")
+
+engine       = create_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+
 
 def get_db():
     db = SessionLocal()
