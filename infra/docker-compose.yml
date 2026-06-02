@@ -1,0 +1,148 @@
+# =====================================================
+# FCD Tamil Nadu Platform — Docker Compose
+# =====================================================
+version: '3.9'
+
+services:
+
+  # ── PostGIS database ──────────────────────────────
+  db:
+    image: postgis/postgis:16-3.4
+    container_name: fcd_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       ${POSTGRES_DB}
+      POSTGRES_USER:     ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - fcd_db_data:/var/lib/postgresql/data
+      - ../database/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
+      - ../database/seed_classes.sql:/docker-entrypoint-initdb.d/02_seed.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis (job queue) ─────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: fcd_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - fcd_redis_data:/data
+
+  # ── FastAPI backend ───────────────────────────────
+  api:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: fcd_api
+    restart: unless-stopped
+    env_file: ../.env
+    ports:
+      - "8000:8000"
+    volumes:
+      - fcd_cog_data:/data/cogs
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  # ── Celery worker (processing jobs) ───────────────
+  worker:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: fcd_worker
+    restart: unless-stopped
+    command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=2
+    env_file: ../.env
+    volumes:
+      - fcd_cog_data:/data/cogs
+    depends_on:
+      - api
+      - redis
+      - db
+
+  # ── Celery Beat scheduler ─────────────────────────
+  scheduler:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: fcd_scheduler
+    restart: unless-stopped
+    command: celery -A app.workers.celery_app beat --loglevel=info
+    env_file: ../.env
+    depends_on:
+      - redis
+      - db
+
+  # ── TiTiler (raster tile server) ──────────────────
+  titiler:
+    image: ghcr.io/developmentseed/titiler:latest
+    container_name: fcd_titiler
+    restart: unless-stopped
+    environment:
+      TITILER_API_CORS_ORIGINS: ${TITILER_CORS_ORIGINS}
+      GDAL_CACHEMAX: 512
+      GDAL_DISABLE_READDIR_ON_OPEN: EMPTY_DIR
+      VSI_CACHE: TRUE
+      VSI_CACHE_SIZE: 536870912
+    ports:
+      - "8080:80"
+    volumes:
+      - fcd_cog_data:/data/cogs
+
+  # ── pg_tileserv (vector tile server) ──────────────
+  pg_tileserv:
+    image: pramsey/pg_tileserv:latest
+    container_name: fcd_pg_tileserv
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+    ports:
+      - "7800:7800"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # ── Next.js frontend ──────────────────────────────
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    container_name: fcd_frontend
+    restart: unless-stopped
+    env_file: ../.env
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+  # ── Nginx reverse proxy ───────────────────────────
+  nginx:
+    image: nginx:alpine
+    container_name: fcd_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - frontend
+      - api
+      - titiler
+      - pg_tileserv
+
+volumes:
+  fcd_db_data:
+  fcd_redis_data:
+  fcd_cog_data:
