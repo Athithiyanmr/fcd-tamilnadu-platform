@@ -1,98 +1,180 @@
 export default function Home() {
   return (
-    <main className="flex min-h-screen flex-col">
-      <header className="bg-green-900 text-white px-6 py-4 flex items-center gap-3">
-        <span className="text-2xl">🌳</span>
+    <main style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+
+      {/* Header */}
+      <header style={{
+        background: '#14532d',
+        color: '#fff',
+        padding: '14px 24px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+      }}>
+        <span style={{ fontSize: 28 }}>🌳</span>
         <div>
-          <h1 className="text-lg font-bold leading-tight">
+          <h1 style={{ margin: 0, fontSize: 17, fontWeight: 700 }}>
             Tamil Nadu Forest Canopy Density Monitoring Platform
           </h1>
-          <p className="text-green-300 text-xs">
-            Sentinel-2 · PostGIS · GEE · Tamil Nadu Forest Department
+          <p style={{ margin: 0, fontSize: 12, color: '#86efac' }}>
+            Sentinel-2 · PostGIS · Google Earth Engine · Tamil Nadu Forest Department
           </p>
         </div>
       </header>
 
-      <div className="flex flex-1">
+      <div style={{ display: 'flex', flex: 1 }}>
+
         {/* Sidebar */}
-        <aside className="w-72 bg-gray-900 text-white p-4 flex flex-col gap-4 overflow-y-auto">
-          <section>
-            <label className="text-xs text-gray-400 uppercase tracking-wider">Year</label>
-            <select className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+        <aside style={{
+          width: 280,
+          background: '#1f2937',
+          color: '#fff',
+          padding: 16,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 16,
+          overflowY: 'auto',
+        }}>
+          <div>
+            <label style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 1 }}>Year</label>
+            <select style={sidebarSelect}>
               <option>2025</option>
               <option>2020</option>
             </select>
-          </section>
+          </div>
 
-          <section>
-            <label className="text-xs text-gray-400 uppercase tracking-wider">District</label>
-            <select className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+          <div>
+            <label style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 1 }}>District</label>
+            <select style={sidebarSelect}>
               <option value="">All Districts</option>
             </select>
-          </section>
+          </div>
 
-          <section>
-            <label className="text-xs text-gray-400 uppercase tracking-wider">Block / Taluk</label>
-            <select className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+          <div>
+            <label style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 1 }}>Block / Taluk</label>
+            <select style={sidebarSelect}>
               <option value="">All Blocks</option>
             </select>
-          </section>
+          </div>
 
-          <section>
-            <label className="text-xs text-gray-400 uppercase tracking-wider">Forest Division</label>
-            <select className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+          <div>
+            <label style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 1 }}>Forest Division</label>
+            <select style={sidebarSelect}>
               <option value="">All Divisions</option>
             </select>
-          </section>
+          </div>
 
-          {/* FCD Legend */}
-          <section className="mt-4">
-            <label className="text-xs text-gray-400 uppercase tracking-wider">FCD Legend</label>
-            <div className="mt-2 space-y-1">
-              {[
-                { color: "#006837", label: "High Forest" },
-                { color: "#3ea540", label: "Low Forest" },
-                { color: "#baf096", label: "Grassland" },
-                { color: "#ad8855", label: "Bare Land" },
-                { color: "#3380cc", label: "Water" },
-                { color: "#000000", label: "Other" },
-              ].map((item) => (
-                <div key={item.label} className="flex items-center gap-2 text-sm">
-                  <span
-                    className="w-4 h-4 rounded-sm flex-shrink-0"
-                    style={{ backgroundColor: item.color }}
-                  />
-                  <span className="text-gray-300">{item.label}</span>
+          {/* Legend */}
+          <div style={{ marginTop: 8 }}>
+            <label style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 1 }}>FCD Legend</label>
+            <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {LEGEND.map((item) => (
+                <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                  <span style={{ width: 16, height: 16, borderRadius: 3, background: item.color, flexShrink: 0 }} />
+                  <span style={{ color: '#d1d5db' }}>{item.label}</span>
                 </div>
               ))}
             </div>
-          </section>
+          </div>
 
-          <button className="mt-auto bg-green-700 hover:bg-green-600 text-white rounded px-4 py-2 text-sm font-medium">
-            Download Report
+          <button style={{
+            marginTop: 'auto',
+            background: '#15803d',
+            color: '#fff',
+            border: 'none',
+            borderRadius: 6,
+            padding: '10px 16px',
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: 'pointer',
+          }}>
+            📅 Download Report
           </button>
         </aside>
 
-        {/* Map area placeholder */}
-        <div className="flex-1 bg-gray-800 flex items-center justify-center">
-          <div className="text-center text-gray-400">
-            <p className="text-5xl mb-4">🗺️</p>
-            <p className="text-lg font-medium">MapLibre GL map will render here</p>
-            <p className="text-sm mt-1">
-              Connect your TiTiler + pg_tileserv endpoints to show FCD layers
-            </p>
+        {/* Map placeholder */}
+        <div style={{
+          flex: 1,
+          background: '#111827',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexDirection: 'column',
+          gap: 12,
+          color: '#6b7280',
+        }}>
+          <span style={{ fontSize: 56 }}>🗺️</span>
+          <p style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>MapLibre GL map loads here</p>
+          <p style={{ fontSize: 13, margin: 0 }}>
+            Connect TiTiler (:8080) + pg_tileserv (:7800) to render FCD layers
+          </p>
+          <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
+            <a href="http://localhost:8000/docs"
+               style={apiBadge}>
+              📚 API Docs
+            </a>
+            <a href="http://localhost:8080"
+               style={apiBadge}>
+              🌍 TiTiler
+            </a>
+            <a href="http://localhost:7800"
+               style={apiBadge}>
+              🔷 pg_tileserv
+            </a>
           </div>
         </div>
       </div>
 
-      {/* Stats bar */}
-      <footer className="bg-gray-900 text-white px-6 py-3 text-xs text-gray-400 flex gap-6">
-        <span>High Forest: — ha</span>
-        <span>Low Forest: — ha</span>
-        <span>Grassland: — ha</span>
-        <span>Bare Land: — ha</span>
-        <span>Carbon Stock: — t</span>
+      {/* Stats footer */}
+      <footer style={{
+        background: '#1f2937',
+        color: '#9ca3af',
+        padding: '10px 24px',
+        fontSize: 12,
+        display: 'flex',
+        gap: 24,
+        flexWrap: 'wrap',
+      }}>
+        <span>🌲 High Forest: — ha</span>
+        <span>🌿 Low Forest: — ha</span>
+        <span>🌾 Grassland: — ha</span>
+        <span>🏜️ Bare Land: — ha</span>
+        <span>🌊 Carbon Stock: — t</span>
+        <span style={{ marginLeft: 'auto' }}>
+          FCD Tamil Nadu Platform v1.0.0
+        </span>
       </footer>
+
     </main>
   );
 }
+
+const sidebarSelect: React.CSSProperties = {
+  marginTop: 4,
+  width: '100%',
+  background: '#374151',
+  border: '1px solid #4b5563',
+  borderRadius: 6,
+  padding: '8px 10px',
+  fontSize: 13,
+  color: '#f9fafb',
+};
+
+const apiBadge: React.CSSProperties = {
+  background: '#374151',
+  color: '#d1d5db',
+  padding: '6px 14px',
+  borderRadius: 6,
+  fontSize: 12,
+  textDecoration: 'none',
+  border: '1px solid #4b5563',
+};
+
+const LEGEND = [
+  { color: '#006837', label: 'High Forest' },
+  { color: '#3ea540', label: 'Low Forest' },
+  { color: '#baf096', label: 'Grassland' },
+  { color: '#ad8855', label: 'Bare Land' },
+  { color: '#3380cc', label: 'Water' },
+  { color: '#000000', label: 'Other / No Data' },
+];
