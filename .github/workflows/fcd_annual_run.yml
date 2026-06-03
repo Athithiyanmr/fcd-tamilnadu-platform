@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       aoi_name:
-        description: "AOI name (e.g. TamilNadu, Chennai_District)"
+        description: "AOI name (e.g. TamilNadu)"
         required: true
         default: "TamilNadu"
       aoi_asset:
@@ -18,15 +18,17 @@ on:
         required: true
         default: "2025"
       cloud_pct:
-        description: "Max cloud percentage threshold"
+        description: "Max cloud percentage"
         required: false
         default: "1"
 
 jobs:
   run-fcd-pipeline:
-    name: "Run FCD Pipeline"
+    name: "Run FCD Pipeline + Upload to GitHub Release"
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 240   # GEE exports can take up to 3–4 hrs for full TN
+    permissions:
+      contents: write       # needed to create GitHub Release
 
     steps:
       - name: Checkout
@@ -42,21 +44,68 @@ jobs:
       - name: Install dependencies
         run: pip install -r gee/requirements.txt
 
+      # ── Step 1: Run GEE pipeline (exports to Google Drive, waits for completion) ──
       - name: Run FCD pipeline
         working-directory: gee
         env:
           GEE_SERVICE_ACCOUNT_KEY:   ${{ secrets.GEE_SERVICE_ACCOUNT_KEY }}
           GEE_PROJECT_ID:            ${{ secrets.GEE_PROJECT_ID }}
           GEE_SERVICE_ACCOUNT_EMAIL: ${{ secrets.GEE_SERVICE_ACCOUNT_EMAIL }}
-          GCS_BUCKET:                ${{ secrets.GCS_BUCKET }}
         run: |
           python run_fcd_pipeline.py \
             --aoi-name  "${{ github.event.inputs.aoi_name || 'TamilNadu' }}" \
             --aoi-asset "${{ github.event.inputs.aoi_asset || 'projects/ee-athithiyan/assets/tamilnadu_boundary' }}" \
             --years     "${{ github.event.inputs.years || '2025' }}" \
-            --cloud-pct "${{ github.event.inputs.cloud_pct || '1' }}" \
-            --bucket    "$GCS_BUCKET"
+            --cloud-pct "${{ github.event.inputs.cloud_pct || '1' }}"
 
+      # ── Step 2: Download GeoTIFFs from Google Drive ──
+      - name: Download GeoTIFFs from Google Drive
+        working-directory: gee
+        env:
+          GEE_SERVICE_ACCOUNT_KEY: ${{ secrets.GEE_SERVICE_ACCOUNT_KEY }}
+        run: |
+          mkdir -p outputs
+          python download_from_drive.py
+
+      # ── Step 3: Upload GeoTIFFs to GitHub Release ──
+      - name: Create GitHub Release and upload GeoTIFFs
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "fcd-${{ github.event.inputs.years || '2025' }}"
+          name: "FCD Tamil Nadu — ${{ github.event.inputs.years || '2025' }}"
+          body: |
+            ## Forest Canopy Density — Tamil Nadu
+            **AOI**: ${{ github.event.inputs.aoi_name || 'TamilNadu' }}
+            **Years**: ${{ github.event.inputs.years || '2025' }}
+            **Satellite**: Sentinel-2 SR Harmonized
+            **Resolution**: 10 m | CRS: EPSG:4326
+            **Generated**: ${{ github.run_id }}
+
+            ### FCD Classes
+            | Code | Class | Carbon (t/ha) |
+            |---|---|---|
+            | 2 | High Forest | 104.58 |
+            | 3 | Low Forest | 90.18 |
+            | 4 | Grassland | 60.64 |
+            | 5 | Bare Land | 0 |
+            | 1 | Water | 0 |
+          files: gee/outputs/*.tif
+          fail_on_unmatched_files: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Step 4: Ingest release asset URLs into PostGIS ──
+      - name: Ingest release URLs into PostGIS
+        working-directory: gee
+        env:
+          GITHUB_REPO:  ${{ github.repository }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python ingest_release_urls.py \
+            "fcd-${{ github.event.inputs.years || '2025' }}"
+
+      # ── Step 5: Upload manifest as artifact ──
       - name: Upload task manifest
         uses: actions/upload-artifact@v4
         with:

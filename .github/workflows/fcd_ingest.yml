@@ -1,16 +1,17 @@
-name: "FCD Task Monitor and DB Ingest"
+name: "FCD Release URL Ingest (manual re-run)"
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "0 */2 1-15 3 *"   # Every 2 hrs in the first 15 days of March
+    inputs:
+      release_tag:
+        description: "GitHub release tag to re-ingest (e.g. fcd-2025)"
+        required: true
+        default: "fcd-2025"
 
 jobs:
-  monitor-and-ingest:
-    name: "Monitor GEE tasks and ingest to PostGIS"
+  ingest:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
-
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -20,15 +21,12 @@ jobs:
           cache: pip
           cache-dependency-path: gee/requirements.txt
 
-      - name: Install dependencies
-        run: pip install -r gee/requirements.txt
+      - run: pip install -r gee/requirements.txt
 
-      - name: Monitor and ingest
+      - name: Ingest release URLs into PostGIS
         working-directory: gee
         env:
-          GEE_SERVICE_ACCOUNT_KEY:   ${{ secrets.GEE_SERVICE_ACCOUNT_KEY }}
-          GEE_PROJECT_ID:            ${{ secrets.GEE_PROJECT_ID }}
-          GEE_SERVICE_ACCOUNT_EMAIL: ${{ secrets.GEE_SERVICE_ACCOUNT_EMAIL }}
-          GCS_BUCKET:                ${{ secrets.GCS_BUCKET }}
-          DATABASE_URL:              ${{ secrets.DATABASE_URL }}
-        run: python monitor_and_ingest.py
+          GITHUB_REPO:  ${{ github.repository }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python ingest_release_urls.py "${{ github.event.inputs.release_tag }}"

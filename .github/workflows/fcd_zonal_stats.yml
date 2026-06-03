@@ -37,8 +37,6 @@ jobs:
           GEE_SERVICE_ACCOUNT_EMAIL: ${{ secrets.GEE_SERVICE_ACCOUNT_EMAIL }}
           DATABASE_URL:              ${{ secrets.DATABASE_URL }}
         run: |
-          echo "Run ID     : ${{ github.event.inputs.run_id }}"
-          echo "Admin level: ${{ github.event.inputs.admin_level }}"
           python compute_zonal_stats.py \
             --run-id      "${{ github.event.inputs.run_id }}" \
             --admin-level "${{ github.event.inputs.admin_level }}"

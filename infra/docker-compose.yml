@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
 
   db:
@@ -32,11 +30,11 @@ services:
     build: ../backend
     container_name: fcd_api
     restart: unless-stopped
+    env_file:
+      - ../.env
     environment:
       DATABASE_URL: postgresql://fcd_admin:fcd_password@db:5432/fcd
       REDIS_URL:    redis://redis:6379/0
-      GEE_PROJECT_ID: ${GEE_PROJECT_ID}
-      GCS_BUCKET:     ${GCS_BUCKET}
     ports:
       - "8000:8000"
     depends_on:
@@ -52,6 +50,8 @@ services:
     container_name: fcd_worker
     restart: unless-stopped
     command: celery -A app.workers.celery_app worker --loglevel=info
+    env_file:
+      - ../.env
     environment:
       DATABASE_URL: postgresql://fcd_admin:fcd_password@db:5432/fcd
       REDIS_URL:    redis://redis:6379/0

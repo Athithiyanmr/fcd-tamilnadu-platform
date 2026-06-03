@@ -1,58 +1,59 @@
 # Deployment Guide
 
+## Architecture Overview
+
+```
+GEE (Sentinel-2 processing)
+  └─→ Google Drive (GeoTIFF export)
+        └─→ GitHub Actions (download + upload)
+              └─→ GitHub Releases (free GeoTIFF storage)
+                    └─→ TiTiler (serves COG tiles via HTTPS URL)
+                    └─→ PostGIS (stores release URLs + stats)
+                          └─→ FastAPI → Next.js WebGIS dashboard
+```
+
+**No GCS / S3 required.** GeoTIFFs are stored as GitHub Release assets (free, public HTTPS).
+
+---
+
 ## Prerequisites
 
-- Docker & Docker Compose installed
+- Docker Desktop installed and running
+- Git
 - Google Cloud project with Earth Engine API enabled
-- GEE service account with `roles/earthengine.writer` and `roles/storage.objectAdmin`
-- Google Cloud Storage bucket for COG exports
-- PostgreSQL/PostGIS (local via Docker Compose or managed, e.g. Cloud SQL / Supabase)
+- GEE service account (for GitHub Actions)
+
+---
 
 ## Quick Start (Local)
 
 ```bash
-# 1. Clone the repo
+# 1. Clone
 git clone https://github.com/Athithiyanmr/fcd-tamilnadu-platform.git
 cd fcd-tamilnadu-platform
 
-# 2. Copy and fill in environment variables
-cp .env.example .env
-# Edit .env with your GEE_PROJECT_ID, GCS_BUCKET, etc.
+# 2. Fix macOS xattr issues if project is on external drive
+find . -name "._*" -delete
+xattr -rc .
 
-# 3. Start all services
+# 3. Create .env
+cp .env.example .env
+# Edit .env — minimum required: GEE_PROJECT_ID, DATABASE_URL, REDIS_URL
+
+# 4. Start all services
 cd infra
 docker compose up -d --build
 
-# 4. Verify services
-curl http://localhost:8000/health   # FastAPI
-curl http://localhost:8080/healthz  # TiTiler
-curl http://localhost:7800/         # pg_tileserv
+# 5. Verify
+curl http://localhost:8000/health   # → {"status":"ok"}
+curl http://localhost:8080/healthz  # → TiTiler health
 open http://localhost:3000          # Frontend
+open http://localhost:8000/docs     # FastAPI Swagger UI
 ```
 
-## GitHub Actions Setup
+---
 
-1. Go to **Settings → Secrets and variables → Actions**
-2. Add the following secrets:
-
-| Secret | Description |
-|---|---|
-| `GEE_SERVICE_ACCOUNT_KEY` | Full JSON of your service account key file |
-| `GEE_SERVICE_ACCOUNT_EMAIL` | `fcd-gee-runner@PROJECT.iam.gserviceaccount.com` |
-| `GEE_PROJECT_ID` | Google Cloud project ID |
-| `GCS_BUCKET` | Cloud Storage bucket name for COG exports |
-| `DATABASE_URL` | `postgresql://user:pass@host:5432/fcd` |
-
-## Workflows
-
-| Workflow | Trigger | Purpose |
-|---|---|---|
-| `fcd_annual_run.yml` | Cron: 1 March / manual | Run FCD pipeline, start GEE export tasks |
-| `fcd_ingest.yml` | Cron every 2 hrs in March / manual | Poll GEE tasks, ingest COG URLs to PostGIS |
-| `fcd_zonal_stats.yml` | Manual with run_id + admin_level | Compute district/block/division stats |
-| `backend_ci.yml` | Push to main/develop | Run FastAPI tests + Docker build check |
-
-## Service Ports
+## Service URLs
 
 | Service | Port | URL |
 |---|---|---|
@@ -60,13 +61,65 @@ open http://localhost:3000          # Frontend
 | TiTiler raster tiles | 8080 | http://localhost:8080 |
 | pg_tileserv vector tiles | 7800 | http://localhost:7800 |
 | Next.js frontend | 3000 | http://localhost:3000 |
-| PostgreSQL/PostGIS | 5432 | — |
-| Redis | 6379 | — |
+| PostgreSQL/PostGIS | 5432 | internal |
+| Redis | 6379 | internal |
 
-## Cloud Deployment (GCP)
+---
 
-- Use **Cloud Run** for API and TiTiler (stateless)
-- Use **Cloud SQL** (PostgreSQL) with PostGIS extension for the database
-- Use **Cloud Storage** for COG rasters
-- Use **Artifact Registry** for Docker images
-- Use **Cloud Scheduler** instead of GitHub Actions cron for production scheduling
+## GitHub Actions Setup
+
+### Add these secrets
+Go to: **GitHub repo → Settings → Secrets and variables → Actions → New repository secret**
+
+| Secret | Value |
+|---|---|
+| `GEE_SERVICE_ACCOUNT_KEY` | Full JSON content of your service account key |
+| `GEE_SERVICE_ACCOUNT_EMAIL` | `fcd-gee-runner@PROJECT.iam.gserviceaccount.com` |
+| `GEE_PROJECT_ID` | Your Google Cloud project ID (e.g. `ee-athithiyan`) |
+| `DATABASE_URL` | PostgreSQL connection string for your production DB |
+
+> **No `GCS_BUCKET` needed.** GeoTIFFs go to GitHub Releases.
+> `GITHUB_TOKEN` is automatically provided by Actions — no secret needed.
+
+---
+
+## Workflows
+
+| Workflow | Trigger | What it does |
+|---|---|---|
+| `fcd_annual_run.yml` | Cron 1 March / manual | GEE → Drive → GitHub Release → PostGIS |
+| `fcd_ingest.yml` | Manual | Re-ingest a release tag's URLs into PostGIS |
+| `fcd_zonal_stats.yml` | Manual | Compute district/block/division stats |
+| `backend_ci.yml` | Push to main | pytest + Docker build check |
+
+---
+
+## Manual Pipeline Run
+
+1. Go to **Actions → FCD Annual Processing — Tamil Nadu**
+2. Click **Run workflow**
+3. Set:
+   - `aoi_name`: `TamilNadu`
+   - `aoi_asset`: `projects/ee-athithiyan/assets/tamilnadu_boundary`
+   - `years`: `2025`
+4. Click **Run workflow**
+5. Monitor progress in the Actions log
+6. When complete, check **Releases** for the new `fcd-2025` release with `.tif` assets
+
+---
+
+## TiTiler — Serving GitHub Release GeoTIFFs
+
+TiTiler can serve any public COG via URL:
+
+```
+http://localhost:8080/cog/tiles/{z}/{x}/{y}.png
+  ?url=https://github.com/Athithiyanmr/fcd-tamilnadu-platform/releases/download/fcd-2025/FCD_TamilNadu_2025.tif
+  &colormap_name=greens
+```
+
+Get TileJSON:
+```
+http://localhost:8080/cog/tilejson.json
+  ?url=https://github.com/.../FCD_TamilNadu_2025.tif
+```
