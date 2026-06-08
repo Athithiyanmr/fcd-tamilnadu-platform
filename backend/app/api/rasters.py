@@ -1,12 +1,15 @@
+"""Raster catalogue and TiTiler tile URL endpoints."""
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import text
-from app.db import get_db
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
-import os
+import httpx
+from app.db import get_db
+from app.models import FcdRaster
+from app.core.config import settings
+from app.core.cache import cache_get, cache_set
 
 router = APIRouter(prefix="/rasters", tags=["Rasters"])
-
-GITHUB_REPO = os.environ.get("GITHUB_REPO", "Athithiyanmr/fcd-tamilnadu-platform")
 
 
 @router.get("")
@@ -15,41 +18,50 @@ async def list_rasters(
     aoi_id:      Optional[str] = Query(None),
     raster_type: Optional[str] = Query(None),
     year:        Optional[int] = Query(None),
-    db=Depends(get_db),
+    db: AsyncSession           = Depends(get_db),
 ):
-    sql    = "SELECT id, run_id, aoi_id, year, raster_type, cog_url, tilejson_url FROM fcd_rasters WHERE 1=1"
-    params = {}
-    if run_id:
-        sql += " AND run_id = :run_id";          params["run_id"] = run_id
-    if aoi_id:
-        sql += " AND aoi_id = :aoi_id";          params["aoi_id"] = aoi_id
-    if raster_type:
-        sql += " AND raster_type = :raster_type"; params["raster_type"] = raster_type
-    if year:
-        sql += " AND year = :year";               params["year"] = year
-    sql += " ORDER BY year DESC;"
-    rows = db.execute(text(sql), params).mappings().all()
+    stmt = select(FcdRaster)
+    if run_id:      stmt = stmt.where(FcdRaster.run_id == run_id)
+    if aoi_id:      stmt = stmt.where(FcdRaster.aoi_id == aoi_id)
+    if raster_type: stmt = stmt.where(FcdRaster.raster_type == raster_type)
+    if year:        stmt = stmt.where(FcdRaster.year == year)
+    stmt = stmt.order_by(FcdRaster.year.desc())
 
-    # Build TiTiler tile URL from GitHub Release download URL
-    result = []
-    for r in rows:
-        row = dict(r)
-        if row.get("cog_url"):
+    result = await db.execute(stmt)
+    rasters = []
+    for r in result.scalars().all():
+        row = {
+            "id": r.id, "run_id": r.run_id, "aoi_id": r.aoi_id,
+            "year": r.year, "raster_type": r.raster_type,
+            "cog_url": r.cog_url, "tilejson_url": r.tilejson_url,
+        }
+        if r.cog_url:
             row["tile_url"] = (
-                f"http://localhost:8080/cog/tiles/{{z}}/{{x}}/{{y}}.png"
-                f"?url={row['cog_url']}"
+                f"{settings.TITILER_URL}/cog/tiles/{{z}}/{{x}}/{{y}}.png"
+                f"?url={r.cog_url}"
             )
-        result.append(row)
-    return {"rasters": result}
+        rasters.append(row)
+    return {"rasters": rasters}
 
 
 @router.get("/releases")
 async def list_github_releases():
-    """Proxy GitHub Releases API to list available FCD release assets."""
-    import httpx
-    async with httpx.AsyncClient() as client:
+    """Proxy GitHub Releases, with 10-minute Redis cache to respect rate limits."""
+    cache_key = "github:releases"
+    cached = await cache_get(cache_key)
+    if cached:
+        return cached
+
+    headers = {"Accept": "application/vnd.github+json"}
+    if settings.GITHUB_TOKEN:
+        headers["Authorization"] = f"Bearer {settings.GITHUB_TOKEN}"
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
         res = await client.get(
-            f"https://api.github.com/repos/{GITHUB_REPO}/releases",
-            headers={"Accept": "application/vnd.github+json"},
+            f"https://api.github.com/repos/{settings.GITHUB_REPO}/releases",
+            headers=headers,
         )
-    return res.json()
+    res.raise_for_status()
+    data = res.json()
+    await cache_set(cache_key, data, ttl_seconds=600)
+    return data

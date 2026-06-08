@@ -1,12 +1,12 @@
-import os
+"""Celery application — configured from settings."""
 from celery import Celery
-
-REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379/0")
+from app.core.config import settings
 
 celery_app = Celery(
     "fcd_worker",
-    broker=REDIS_URL,
-    backend=REDIS_URL,
+    broker=settings.REDIS_URL,
+    backend=settings.REDIS_URL,
+    include=["app.workers.tasks"],
 )
 
 celery_app.conf.update(
@@ -16,6 +16,8 @@ celery_app.conf.update(
     accept_content=["json"],
     timezone="Asia/Kolkata",
     enable_utc=True,
+    task_acks_late=True,           # don't ack until task completes (crash-safe)
+    worker_prefetch_multiplier=1,  # one task at a time per worker (safe for heavy FCD jobs)
 )
 
 

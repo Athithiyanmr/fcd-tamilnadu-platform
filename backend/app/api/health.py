@@ -1,13 +1,15 @@
+"""Health-check endpoint."""
 from fastapi import APIRouter
-from datetime import datetime
+from app.core.config import settings
 
-router = APIRouter()
+router = APIRouter(tags=["Health"])
+
 
 @router.get("/health")
-async def health_check():
+async def health():
     return {
-        "status":    "ok",
-        "service":   "FCD Tamil Nadu API",
-        "version":   "1.0.0",
-        "timestamp": datetime.utcnow().isoformat()
+        "status": "ok",
+        "service": "FCD Tamil Nadu Platform",
+        "titiler": settings.TITILER_URL,
+        "storage": settings.STORAGE_BACKEND,
     }
