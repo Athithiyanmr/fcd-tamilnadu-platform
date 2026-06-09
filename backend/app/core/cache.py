@@ -1,30 +1,31 @@
-"""Redis cache helpers."""
-import json
-from typing import Optional
-import redis.asyncio as aioredis
-from app.core.config import settings
+import json, asyncio
+from typing import Any, Optional
 
-_redis: Optional[aioredis.Redis] = None
+_store: dict = {}
+_lock = asyncio.Lock()
 
 
-async def get_redis() -> aioredis.Redis:
-    global _redis
-    if _redis is None:
-        _redis = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
-    return _redis
+async def cache_get(key: str) -> Optional[Any]:
+    async with _lock:
+        entry = _store.get(key)
+        if entry is None:
+            return None
+        value, expires_at = entry
+        import time
+        if time.monotonic() > expires_at:
+            del _store[key]
+            return None
+        return value
 
 
-async def cache_get(key: str) -> Optional[dict]:
-    r = await get_redis()
-    val = await r.get(key)
-    return json.loads(val) if val else None
+async def cache_set(key: str, value: Any, ttl_seconds: int = 300) -> None:
+    import time
+    async with _lock:
+        _store[key] = (value, time.monotonic() + ttl_seconds)
 
 
-async def cache_set(key: str, value: dict, ttl_seconds: int = 300) -> None:
-    r = await get_redis()
-    await r.setex(key, ttl_seconds, json.dumps(value))
-
-
-async def cache_delete(key: str) -> None:
-    r = await get_redis()
-    await r.delete(key)
+async def cache_invalidate(prefix: str) -> None:
+    async with _lock:
+        keys = [k for k in _store if k.startswith(prefix)]
+        for k in keys:
+            del _store[k]

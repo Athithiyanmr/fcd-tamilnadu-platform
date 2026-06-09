@@ -1,30 +1,13 @@
-"""JWT bearer authentication dependency."""
-from fastapi import Security, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-import jwt
-from app.core.config import settings
+import os
+from fastapi import Header, HTTPException, status
 
-_bearer = HTTPBearer(auto_error=True)
+_API_KEY = os.getenv("API_SECRET_KEY", "changeme")
 
 
-def require_auth(
-    credentials: HTTPAuthorizationCredentials = Security(_bearer),
-) -> dict:
-    """Decode and validate a JWT Bearer token. Returns the payload."""
-    try:
-        payload = jwt.decode(
-            credentials.credentials,
-            settings.API_SECRET_KEY,
-            algorithms=["HS256"],
-        )
-        return payload
-    except jwt.ExpiredSignatureError:
+async def require_auth(x_api_key: str = Header(..., alias="X-API-Key")) -> dict:
+    if x_api_key != _API_KEY:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token has expired.",
+            detail="Invalid or missing API key",
         )
-    except jwt.InvalidTokenError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication token.",
-        )
+    return {"key": x_api_key}

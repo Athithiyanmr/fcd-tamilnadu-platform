@@ -1,0 +1,99 @@
+name: "FCD District Report Generation"
+
+on:
+  workflow_run:
+    workflows: ["FCD Annual Processing \u2014 Tamil Nadu"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "FCD run UUID from PostGIS (leave blank to use latest)"
+        required: false
+        default: ""
+      report_type:
+        description: "Report scope: state | district | block"
+        required: true
+        default: "district"
+
+jobs:
+  generate-reports:
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install requests psycopg2-binary sqlalchemy
+
+      - name: Queue district reports via API
+        env:
+          API_URL:        ${{ secrets.API_URL }}
+          API_SECRET_KEY: ${{ secrets.API_SECRET_KEY }}
+          DATABASE_URL:   ${{ secrets.DATABASE_URL }}
+          INPUT_RUN_ID:   ${{ github.event.inputs.run_id }}
+          REPORT_TYPE:    ${{ github.event.inputs.report_type || 'district' }}
+        run: |
+          python - <<'EOF'
+          import os, requests, psycopg2
+
+          api_url     = os.environ["API_URL"]
+          key         = os.environ["API_SECRET_KEY"]
+          db_url      = os.environ["DATABASE_URL"].replace("+asyncpg", "")
+          input_run   = os.environ.get("INPUT_RUN_ID", "").strip()
+          report_type = os.environ.get("REPORT_TYPE", "district")
+
+          conn = psycopg2.connect(db_url)
+          cur  = conn.cursor()
+
+          if input_run:
+              run_id = input_run
+          else:
+              cur.execute(
+                  "SELECT id FROM fcd_runs WHERE status='completed' "
+                  "ORDER BY created_at DESC LIMIT 1"
+              )
+              row = cur.fetchone()
+              if not row:
+                  print("No completed FCD run found. Exiting.")
+                  exit(0)
+              run_id = str(row[0])
+
+          cur.execute(
+              "SELECT id FROM admin_units WHERE unit_type='district'"
+          )
+          districts = [str(r[0]) for r in cur.fetchall()]
+          conn.close()
+
+          print(f"Queuing {len(districts)} {report_type} report(s) for run {run_id}")
+          ok = fail = 0
+          for aoi_id in districts:
+              r = requests.post(
+                  f"{api_url}/reports",
+                  json={"run_id": run_id, "aoi_id": aoi_id,
+                        "report_type": report_type},
+                  headers={"X-API-Key": key},
+                  timeout=10,
+              )
+              if r.status_code in (200, 202):
+                  ok += 1
+              else:
+                  fail += 1
+                  print(f"  WARN {aoi_id}: HTTP {r.status_code} {r.text[:80]}")
+
+          print(f"Done: {ok} queued, {fail} failed.")
+          if fail:
+              exit(1)
+          EOF
+
+      - name: Notify on failure
+        if: failure()
+        run: echo "::error::Report generation workflow failed."
